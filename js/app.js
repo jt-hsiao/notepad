@@ -1130,7 +1130,7 @@ you can buy me a coffee — the link of which is available in the About section.
 			copyNotesToClipboard(notepad.note.val());
 		}
 
-		if ((event.ctrlKey && event.code === 'Delete') || (event.metaKey && event.code === 'Backspace')) {
+		if (event.ctrlKey && event.code === 'Delete') {
 			event.preventDefault();
 			deleteNotes();
 		}
