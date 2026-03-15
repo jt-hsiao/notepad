@@ -135,8 +135,8 @@ $(document).ready(function () {
 		closeToastPopup();
 	});
 	
-	// Show toast popup after a delay
-	setTimeout(showRandomToastLink, 5000);
+	// Toast popup disabled
+	// setTimeout(showRandomToastLink, 5000);
 	
 	// Setup coffee icon hover animation
 	setupCoffeeIconAnimation();
@@ -768,6 +768,9 @@ you can buy me a coffee — the link of which is available in the About section.
 	notepad.focusModeCloseButton.click(function () {
 		turnOffFocusMode(notepad);
 	})
+
+	// Default to Focus Mode ON
+	toggleFocusMode(notepad);
 
 	// Update statistics when modal is shown
 	notepad.statisticsModal.on('show.bs.modal', function () {
