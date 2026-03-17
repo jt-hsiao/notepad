@@ -673,39 +673,488 @@ you can buy me a coffee — the link of which is available in the About section.
 		updateWordCountPill(get(this).val());
 	}, 500));
 
-	notepad.note.keydown(function (e) {
-		const tabIndentation = notepad.tabIndentation.prop('checked');
+	// Roman numeral conversion helpers
+	function romanToInt(s) {
+		var map = { i: 1, v: 5, x: 10, l: 50, c: 100, d: 500, m: 1000 };
+		var result = 0;
+		s = s.toLowerCase();
+		for (var j = 0; j < s.length; j++) {
+			var cur = map[s[j]];
+			var nxt = j + 1 < s.length ? map[s[j + 1]] : 0;
+			result += cur < nxt ? -cur : cur;
+		}
+		return result;
+	}
 
-		if (e.key === "Tab" && tabIndentation) {
-			e.preventDefault(); 
-	
-			let textarea = e.target;
-			let start = textarea.selectionStart;
-			let end = textarea.selectionEnd;
-			let tabCharacter = "\t";
-	
-			if (start === end) {
-				// Single cursor position: Insert tab
-				document.execCommand("insertText", false, tabCharacter);
-				textarea.selectionStart = textarea.selectionEnd = start + tabCharacter.length;
-			} else {
-				// Multi-line selection: Add tab to each line
-				let value = textarea.value;
-				let selectedText = value.substring(start, end);
-				let lines = selectedText.split("\n");
-	
-				if (e.shiftKey) {
-					// Shift+Tab: Remove leading tab if present
-					let unindentedLines = lines.map(line =>
-						line.startsWith(tabCharacter) ? line.substring(tabCharacter.length) : line
-					);
-					document.execCommand("insertText", false, unindentedLines.join("\n"));
-				} else {
-					// Tab: Indent each line
-					let indentedLines = lines.map(line => tabCharacter + line);
-					document.execCommand("insertText", false, indentedLines.join("\n"));
+	function intToRoman(num) {
+		var vals = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1];
+		var syms = ['m', 'cm', 'd', 'cd', 'c', 'xc', 'l', 'xl', 'x', 'ix', 'v', 'iv', 'i'];
+		var result = '';
+		for (var j = 0; j < vals.length; j++) {
+			while (num >= vals[j]) {
+				result += syms[j];
+				num -= vals[j];
+			}
+		}
+		return result;
+	}
+
+	// List type definitions for ordered and unordered list support
+	// Order matters: Roman numerals are checked before single-letter alpha
+	// so that "i. " matches as Roman I, not alpha "i".
+	var ROMAN_LOWER_RE = /^(\s*)(x{0,3}(?:i{1,3}|iv|vi{0,3}|ix)|x{1,3})\. /;
+	var ROMAN_LOWER_PAREN_RE = /^(\s*)(x{0,3}(?:i{1,3}|iv|vi{0,3}|ix)|x{1,3})\) /;
+	var ROMAN_UPPER_RE = /^(\s*)(X{0,3}(?:I{1,3}|IV|VI{0,3}|IX)|X{1,3})\. /;
+	var ROMAN_UPPER_PAREN_RE = /^(\s*)(X{0,3}(?:I{1,3}|IV|VI{0,3}|IX)|X{1,3})\) /;
+
+	var LIST_TYPES = [
+		{
+			pattern: /^(\s*)(\d+)\. /,
+			ordered: true,
+			getIndex: function (m) { return parseInt(m[2]) - 1; },
+			format: function (indent, i) { return indent + (i + 1) + '. '; }
+		},
+		{
+			pattern: /^(\s*)(\d+)\) /,
+			ordered: true,
+			getIndex: function (m) { return parseInt(m[2]) - 1; },
+			format: function (indent, i) { return indent + (i + 1) + ') '; }
+		},
+		{
+			pattern: ROMAN_LOWER_RE,
+			ordered: true,
+			getIndex: function (m) { return romanToInt(m[2]) - 1; },
+			format: function (indent, i) { return indent + intToRoman(i + 1) + '. '; }
+		},
+		{
+			pattern: ROMAN_LOWER_PAREN_RE,
+			ordered: true,
+			getIndex: function (m) { return romanToInt(m[2]) - 1; },
+			format: function (indent, i) { return indent + intToRoman(i + 1) + ') '; }
+		},
+		{
+			pattern: ROMAN_UPPER_RE,
+			ordered: true,
+			getIndex: function (m) { return romanToInt(m[2]) - 1; },
+			format: function (indent, i) { return indent + intToRoman(i + 1).toUpperCase() + '. '; }
+		},
+		{
+			pattern: ROMAN_UPPER_PAREN_RE,
+			ordered: true,
+			getIndex: function (m) { return romanToInt(m[2]) - 1; },
+			format: function (indent, i) { return indent + intToRoman(i + 1).toUpperCase() + ') '; }
+		},
+		{
+			pattern: /^(\s*)([a-z])\. /,
+			ordered: true,
+			getIndex: function (m) { return m[2].charCodeAt(0) - 97; },
+			format: function (indent, i) { return indent + String.fromCharCode(97 + (i % 26)) + '. '; }
+		},
+		{
+			pattern: /^(\s*)([a-z])\) /,
+			ordered: true,
+			getIndex: function (m) { return m[2].charCodeAt(0) - 97; },
+			format: function (indent, i) { return indent + String.fromCharCode(97 + (i % 26)) + ') '; }
+		},
+		{
+			pattern: /^(\s*)([A-Z])\. /,
+			ordered: true,
+			getIndex: function (m) { return m[2].charCodeAt(0) - 65; },
+			format: function (indent, i) { return indent + String.fromCharCode(65 + (i % 26)) + '. '; }
+		},
+		{
+			pattern: /^(\s*)([A-Z])\) /,
+			ordered: true,
+			getIndex: function (m) { return m[2].charCodeAt(0) - 65; },
+			format: function (indent, i) { return indent + String.fromCharCode(65 + (i % 26)) + ') '; }
+		},
+		{
+			pattern: /^(\s*)[-] /,
+			ordered: false,
+			getIndex: function () { return 0; },
+			format: function (indent) { return indent + '- '; }
+		},
+		{
+			pattern: /^(\s*)\* /,
+			ordered: false,
+			getIndex: function () { return 0; },
+			format: function (indent) { return indent + '* '; }
+		},
+		{
+			pattern: /^(\s*)\+ /,
+			ordered: false,
+			getIndex: function () { return 0; },
+			format: function (indent) { return indent + '+ '; }
+		}
+	];
+
+	function matchListItem(line) {
+		for (var i = 0; i < LIST_TYPES.length; i++) {
+			var match = line.match(LIST_TYPES[i].pattern);
+			if (match) {
+				return { type: LIST_TYPES[i], match: match, indent: match[1], markerLength: match[0].length };
+			}
+		}
+		return null;
+	}
+
+	function getLineIndex(lines, charPos) {
+		var pos = 0;
+		for (var i = 0; i < lines.length; i++) {
+			if (pos + lines[i].length >= charPos) return i;
+			pos += lines[i].length + 1;
+		}
+		return lines.length - 1;
+	}
+
+	function getLineStartPos(lines, lineIdx) {
+		var pos = 0;
+		for (var i = 0; i < lineIdx; i++) {
+			pos += lines[i].length + 1;
+		}
+		return pos;
+	}
+
+	function findAndRenumberBlock(lines, lineIdx) {
+		if (lineIdx < 0 || lineIdx >= lines.length) return;
+		var item = matchListItem(lines[lineIdx]);
+		if (!item || !item.type.ordered) return;
+
+		var indent = item.indent;
+		var indentLen = indent.length;
+		var patternSrc = item.type.pattern.source;
+
+		function isSameLevel(line) {
+			var m = matchListItem(line);
+			return m && m.type.pattern.source === patternSrc && m.indent === indent;
+		}
+
+		function isDeeperIndent(line) {
+			if (line.trim() === '') return false;
+			var m = matchListItem(line);
+			if (m) return m.indent.length > indentLen;
+			return line.match(/^(\s*)/)[1].length > indentLen;
+		}
+
+		// Find block boundaries, skipping deeper-indented lines (sub-items)
+		// Only empty lines or same/shallower non-matching lines break the block
+		var blockStart = lineIdx;
+		while (blockStart > 0) {
+			var prev = lines[blockStart - 1];
+			if (prev.trim() === '') break;
+			if (isSameLevel(prev) || isDeeperIndent(prev)) blockStart--;
+			else break;
+		}
+
+		var blockEnd = lineIdx;
+		while (blockEnd < lines.length - 1) {
+			var next = lines[blockEnd + 1];
+			if (next.trim() === '') break;
+			if (isSameLevel(next) || isDeeperIndent(next)) blockEnd++;
+			else break;
+		}
+
+		// Renumber only same-level items, skipping sub-items
+		var num = 0;
+		for (var i = blockStart; i <= blockEnd; i++) {
+			var mi = matchListItem(lines[i]);
+			if (!mi || mi.type.pattern.source !== patternSrc || mi.indent !== indent) continue;
+			var content = lines[i].substring(mi.markerLength);
+			lines[i] = mi.type.format(indent, num) + content;
+			num++;
+		}
+	}
+
+	// Apply a full-text replacement to the textarea, preserving undo history
+	function applyTextChange(textarea, newValue, cursorStart, cursorEnd) {
+		textarea.setSelectionRange(0, textarea.value.length);
+		document.execCommand('insertText', false, newValue);
+		textarea.setSelectionRange(cursorStart, cursorEnd);
+		setState('note', newValue);
+		updateWordCountPill(newValue);
+	}
+
+	// Detect the indent unit (e.g., 4 spaces or 1 tab) used in the document
+	function detectIndentUnit(lines) {
+		var min = null;
+		for (var i = 0; i < lines.length; i++) {
+			var m = matchListItem(lines[i]);
+			if (m && m.indent.length > 0) {
+				if (min === null || m.indent.length < min.length) {
+					min = m.indent;
 				}
 			}
+		}
+		return min || '\t';
+	}
+
+	// Find an existing ordered list type at a given indent level near lineIdx
+	function findNearbyListType(lines, lineIdx, targetIndent) {
+		var targetLen = targetIndent.length;
+		for (var i = lineIdx - 1; i >= 0; i--) {
+			if (lines[i].trim() === '') break;
+			var m = matchListItem(lines[i]);
+			if (m && m.indent === targetIndent && m.type.ordered) return m.type;
+			if (m && m.indent.length <= targetLen && m.indent !== targetIndent) break;
+		}
+		for (var i = lineIdx + 1; i < lines.length; i++) {
+			if (lines[i].trim() === '') break;
+			var m = matchListItem(lines[i]);
+			if (m && m.indent === targetIndent && m.type.ordered) return m.type;
+			if (m && m.indent.length <= targetLen && m.indent !== targetIndent) break;
+		}
+		return null;
+	}
+
+	// Determine list type family (numeric, alpha-lower, roman-lower, etc.)
+	function getTypeFamily(type) {
+		if (!type.ordered) return 'unordered';
+		if (type.pattern === ROMAN_LOWER_RE || type.pattern === ROMAN_LOWER_PAREN_RE) return 'roman-lower';
+		if (type.pattern === ROMAN_UPPER_RE || type.pattern === ROMAN_UPPER_PAREN_RE) return 'roman-upper';
+		var src = type.pattern.source;
+		if (src.indexOf('\\d') !== -1) return 'numeric';
+		if (src.indexOf('a-z') !== -1) return 'alpha-lower';
+		if (src.indexOf('A-Z') !== -1) return 'alpha-upper';
+		return 'numeric';
+	}
+
+	function getTypeSuffix(type) {
+		return type.pattern.source.indexOf('\\)') !== -1 ? ')' : '.';
+	}
+
+	function findListType(family, suffix) {
+		for (var i = 0; i < LIST_TYPES.length; i++) {
+			if (LIST_TYPES[i].ordered && getTypeFamily(LIST_TYPES[i]) === family && getTypeSuffix(LIST_TYPES[i]) === suffix) {
+				return LIST_TYPES[i];
+			}
+		}
+		return LIST_TYPES[0];
+	}
+
+	// Default sub/parent type cycle: numeric → alpha-lower → roman-lower → numeric
+	var SUB_FAMILY = { 'numeric': 'alpha-lower', 'alpha-lower': 'roman-lower', 'roman-lower': 'numeric', 'alpha-upper': 'roman-upper', 'roman-upper': 'alpha-upper' };
+	var PARENT_FAMILY = { 'alpha-lower': 'numeric', 'roman-lower': 'alpha-lower', 'numeric': 'roman-lower', 'roman-upper': 'alpha-upper', 'alpha-upper': 'roman-upper' };
+
+	function getDefaultSubType(type) {
+		return findListType(SUB_FAMILY[getTypeFamily(type)] || 'alpha-lower', getTypeSuffix(type));
+	}
+
+	function getDefaultParentType(type) {
+		return findListType(PARENT_FAMILY[getTypeFamily(type)] || 'numeric', getTypeSuffix(type));
+	}
+
+	notepad.note.keydown(function (e) {
+		var tabIndentation = notepad.tabIndentation.prop('checked');
+
+		if (e.key === "Tab") {
+			var textarea = e.target;
+			var value = textarea.value;
+			var start = textarea.selectionStart;
+			var end = textarea.selectionEnd;
+			var allLines = value.split('\n');
+			var startLine = getLineIndex(allLines, start);
+			var endLine = getLineIndex(allLines, end);
+			if (end > start && endLine > startLine && end === getLineStartPos(allLines, endLine)) endLine--;
+
+			// Check if all selected lines are ordered list items
+			var allOrdered = true;
+			var firstItem = null;
+			for (var li = startLine; li <= endLine; li++) {
+				var chk = matchListItem(allLines[li]);
+				if (!chk || !chk.type.ordered) { allOrdered = false; break; }
+				if (li === startLine) firstItem = chk;
+			}
+
+			if (allOrdered && firstItem) {
+				// List-aware Tab: change indent level + marker type
+				e.preventDefault();
+
+				var indentUnit = detectIndentUnit(allLines);
+				var firstLineStart = getLineStartPos(allLines, startLine);
+				var cursorContentOffset = Math.max(0, start - firstLineStart - firstItem.markerLength);
+
+				for (var li = startLine; li <= endLine; li++) {
+					var mi = matchListItem(allLines[li]);
+					if (!mi || !mi.type.ordered) continue;
+					var content = allLines[li].substring(mi.markerLength);
+
+					if (e.shiftKey) {
+						if (mi.indent.length === 0) continue;
+						var newIndent = mi.indent.length >= indentUnit.length
+							? mi.indent.substring(0, mi.indent.length - indentUnit.length) : '';
+						var newType = findNearbyListType(allLines, li, newIndent) || getDefaultParentType(mi.type);
+						allLines[li] = newType.format(newIndent, 0) + content;
+					} else {
+						var newIndent = mi.indent + indentUnit;
+						var newType = findNearbyListType(allLines, li, newIndent) || getDefaultSubType(mi.type);
+						allLines[li] = newType.format(newIndent, 0) + content;
+					}
+				}
+
+				// Renumber all affected levels
+				for (var li = startLine; li <= endLine; li++) {
+					findAndRenumberBlock(allLines, li);
+				}
+				if (startLine > 0) findAndRenumberBlock(allLines, startLine - 1);
+				if (endLine < allLines.length - 1) findAndRenumberBlock(allLines, endLine + 1);
+
+				var newValue = allLines.join('\n');
+				var newFirstItem = matchListItem(allLines[startLine]);
+				var newFirstLineStart = getLineStartPos(allLines, startLine);
+				var newCursorPos = newFirstLineStart + (newFirstItem ? newFirstItem.markerLength : 0) + cursorContentOffset;
+				newCursorPos = Math.max(0, Math.min(newCursorPos, newValue.length));
+
+				applyTextChange(textarea, newValue, newCursorPos, newCursorPos);
+			} else if (tabIndentation) {
+				// Non-list: existing tab behavior
+				e.preventDefault();
+				var tabCharacter = "\t";
+
+				if (start === end) {
+					document.execCommand("insertText", false, tabCharacter);
+					textarea.selectionStart = textarea.selectionEnd = start + tabCharacter.length;
+				} else {
+					var selectedText = value.substring(start, end);
+					var selLines = selectedText.split("\n");
+
+					if (e.shiftKey) {
+						var unindentedLines = selLines.map(function (line) {
+							return line.startsWith(tabCharacter) ? line.substring(tabCharacter.length) : line;
+						});
+						document.execCommand("insertText", false, unindentedLines.join("\n"));
+					} else {
+						var indentedLines = selLines.map(function (line) { return tabCharacter + line; });
+						document.execCommand("insertText", false, indentedLines.join("\n"));
+					}
+				}
+			}
+		}
+
+		// Enter key: Auto-continue list items
+		// Skip if modifier keys are held (Shift+Enter = plain newline) or during IME composition
+		if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing) {
+			var textarea = e.target;
+			var originalValue = textarea.value;
+			var selStart = textarea.selectionStart;
+			var selEnd = textarea.selectionEnd;
+
+			// Remove selected text from computation
+			var value = selStart !== selEnd
+				? originalValue.substring(0, selStart) + originalValue.substring(selEnd)
+				: originalValue;
+
+			var lines = value.split('\n');
+			var currentLineIdx = getLineIndex(lines, selStart);
+			var currentLine = lines[currentLineIdx];
+			var item = matchListItem(currentLine);
+
+			if (item) {
+				var lineStartPos = getLineStartPos(lines, currentLineIdx);
+				var cursorInLine = selStart - lineStartPos;
+
+				// Only intercept if cursor is at or past the marker end
+				if (cursorInLine >= item.markerLength) {
+					var contentAfterMarker = currentLine.substring(item.markerLength);
+
+					e.preventDefault();
+
+					if (contentAfterMarker.trim() === '') {
+						// Empty list item → exit the list (remove marker)
+						lines[currentLineIdx] = '';
+						if (currentLineIdx + 1 < lines.length) {
+							findAndRenumberBlock(lines, currentLineIdx + 1);
+						}
+
+						var newValue = lines.join('\n');
+						applyTextChange(textarea, newValue, lineStartPos, lineStartPos);
+					} else {
+						// Split at cursor, create new list item
+						var beforeCursor = currentLine.substring(0, cursorInLine);
+						var afterCursor = currentLine.substring(cursorInLine);
+
+						var currentIndex = item.type.getIndex(item.match);
+						var nextMarker = item.type.format(item.indent, currentIndex + 1);
+
+						lines[currentLineIdx] = beforeCursor;
+						lines.splice(currentLineIdx + 1, 0, nextMarker + afterCursor);
+
+						// Renumber the block from the new line onwards
+						findAndRenumberBlock(lines, currentLineIdx + 1);
+
+						var newValue = lines.join('\n');
+
+						// Position cursor right after the marker on the new line
+						var newLineStartPos = getLineStartPos(lines, currentLineIdx + 1);
+						var newItem = matchListItem(lines[currentLineIdx + 1]);
+						var newCursorPos = newLineStartPos + (newItem ? newItem.markerLength : nextMarker.length);
+
+						applyTextChange(textarea, newValue, newCursorPos, newCursorPos);
+					}
+				}
+			}
+		}
+
+		// Option/Alt + ArrowUp/ArrowDown: Move line(s) up/down
+		if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+			e.preventDefault();
+
+			var textarea = e.target;
+			var value = textarea.value;
+			var selStart = textarea.selectionStart;
+			var selEnd = textarea.selectionEnd;
+			var lines = value.split('\n');
+			var movingUp = e.key === 'ArrowUp';
+
+			var startLineIdx = getLineIndex(lines, selStart);
+			var endLineIdx = getLineIndex(lines, selEnd);
+
+			// If selection ends exactly at the start of a line, exclude that line
+			if (selEnd > selStart && endLineIdx > startLineIdx) {
+				if (selEnd === getLineStartPos(lines, endLineIdx)) {
+					endLineIdx--;
+				}
+			}
+
+			// Boundary checks
+			if (movingUp && startLineIdx === 0) return;
+			if (!movingUp && endLineIdx >= lines.length - 1) return;
+
+			// Record cursor offsets relative to the selected block's start
+			var blockStartPos = getLineStartPos(lines, startLineIdx);
+			var selStartOffset = selStart - blockStartPos;
+			var selEndOffset = selEnd - blockStartPos;
+
+			// Swap lines
+			if (movingUp) {
+				var removed = lines.splice(startLineIdx - 1, 1)[0];
+				lines.splice(endLineIdx, 0, removed);
+				startLineIdx--;
+				endLineIdx--;
+			} else {
+				var removed = lines.splice(endLineIdx + 1, 1)[0];
+				lines.splice(startLineIdx, 0, removed);
+				startLineIdx++;
+				endLineIdx++;
+			}
+
+			// Renumber ordered list items in affected blocks
+			findAndRenumberBlock(lines, startLineIdx);
+			if (movingUp) {
+				findAndRenumberBlock(lines, endLineIdx + 1);
+			} else {
+				findAndRenumberBlock(lines, startLineIdx - 1);
+			}
+
+			// Reconstruct text
+			var newValue = lines.join('\n');
+
+			// Calculate new cursor position
+			var newBlockStartPos = getLineStartPos(lines, startLineIdx);
+			var newSelStart = Math.max(0, Math.min(newBlockStartPos + selStartOffset, newValue.length));
+			var newSelEnd = Math.max(0, Math.min(newBlockStartPos + selEndOffset, newValue.length));
+
+			// Apply using execCommand to preserve undo history
+			applyTextChange(textarea, newValue, newSelStart, newSelEnd);
 		}
 	});
 
