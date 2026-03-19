@@ -295,7 +295,7 @@ function deleteNotes() {
             window.snapshotsManager.createSnapshot();
 
             notepad.note.val('').focus();
-            setState('note', '');
+            setState(noteKey, '');
 
             Swal.fire(
                 'Deleted!',

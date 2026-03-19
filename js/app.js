@@ -669,7 +669,7 @@ you can buy me a coffee — the link of which is available in the About section.
     });
 
 	notepad.note.on('input', debounce(function () {
-		setState('note', get(this).val());
+		setState(noteKey, get(this).val());
 		updateWordCountPill(get(this).val());
 	}, 500));
 
@@ -870,7 +870,7 @@ you can buy me a coffee — the link of which is available in the About section.
 		textarea.setSelectionRange(0, textarea.value.length);
 		document.execCommand('insertText', false, newValue);
 		textarea.setSelectionRange(cursorStart, cursorEnd);
-		setState('note', newValue);
+		setState(noteKey, newValue);
 		updateWordCountPill(newValue);
 	}
 

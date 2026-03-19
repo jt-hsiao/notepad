@@ -10,6 +10,14 @@ function removeState(state) {
     localStorage.removeItem(state);
 }
 
+// Returns the localStorage key for the current note based on ?id= query param.
+// No param or empty → 'note' (backward compatible), otherwise 'note:<id>'.
+// Cached at load time since the URL does not change during a session.
+const noteKey = (() => {
+    const id = new URLSearchParams(window.location.search).get('id');
+    return id ? 'note:' + id : 'note';
+})();
+
 function selectById(id) {
     return $(`#${id}`);
 }
@@ -67,7 +75,7 @@ function selector() {
             serif: selectById('serif'),
         },
         state: {
-            note: getState('note'),
+            note: getState(noteKey),
             mode: getState('mode'),
             isUserPreferredTheme: getState('isUserPreferredTheme'),
             userChosenFontSize: getState('userChosenFontSize'),
@@ -110,6 +118,7 @@ function selector() {
         getState,
         setState,
         removeState,
+        noteKey,
         selectById,
         selectByClassName
     }

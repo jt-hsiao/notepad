@@ -270,7 +270,7 @@ class SnapshotsManager {
 
                 // Restore the content
                 document.getElementById('note').value = snapshot.content;
-                setState('note', snapshot.content);
+                setState(noteKey, snapshot.content);
                 updateWordCountPill(snapshot.content);
 
                 Swal.fire({
